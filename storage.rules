@@ -1,0 +1,84 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ==========================================
+    // SECURITY COMPLIANCE HELPER FUNCTIONS
+    // ==========================================
+
+    // Verifies the incoming client connection is authorized
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Resolves organization ID of the caller from Firestore users catalog
+    function getUserOrgId() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.organizationId;
+    }
+
+    // Safely determines if the caller has clinical organization status or lab status matching the targeted Case ID
+    function isCaseParticipant(caseId) {
+      return isAuthenticated() && (
+        firestore.get(/databases/(default)/documents/cases/$(caseId)).data.clinicId == getUserOrgId() ||
+        firestore.get(/databases/(default)/documents/cases/$(caseId)).data.labId == getUserOrgId()
+      );
+    }
+
+    // Evaluates incoming resource size to protect infrastructure from capacity flood exploits
+    function isValidSize(maxBytes) {
+      return request.resource.size > 0 && request.resource.size < maxBytes;
+    }
+
+    // Verifies file content metadata matching the expected clinical payload extensions
+    function isPermittedExtension(fileName) {
+      return fileName.matches('.*\\.stl') || 
+             fileName.matches('.*\\.STL') ||
+             fileName.matches('.*\\.pdf') || 
+             fileName.matches('.*\\.PDF') ||
+             fileName.matches('.*\\.jpg') || 
+             fileName.matches('.*\\.jpeg') || 
+             fileName.matches('.*\\.png');
+    }
+
+    // Checks matches on Content-Type headers for digital mesh models, medical PDF scans, and image snaps
+    function isPermittedContentType() {
+      return request.resource.contentType.matches('application/octet-stream') || // STL payload often defaults here
+             request.resource.contentType.matches('application/pdf') ||
+             request.resource.contentType.matches('image/jpeg') ||
+             request.resource.contentType.matches('image/png');
+    }
+
+    // ==========================================
+    // STORAGE BUCKET ROUTING ARCHITECTURE
+    // ==========================================
+
+    // Dynamic folder structure for STL CAD Files and patient dental scans
+    match /cases/{caseId}/{fileName} {
+      // 1. Isolation check - only the clinic that generated the case or the assigned lab can access files
+      allow read: if isCaseParticipant(caseId);
+      
+      // 2. Strict upload safeguards (Limits payloads to max 150MB per single STL file and checks content formats)
+      allow create: if isCaseParticipant(caseId) 
+                    && isPermittedExtension(fileName) 
+                    && isPermittedContentType()
+                    && isValidSize(150 * 1024 * 1024); // 150MB cap on large intraoral dental meshes
+
+      // 3. Clinical scan profiles and prescriptions must never be overwritten directly to protect clinical trace audit histories
+      allow update: if false;
+
+      // 4. File deletions are restricted to case creators who possess specific administrative clinical roles
+      allow delete: if isAuthenticated() 
+                    && firestore.get(/databases/(default)/documents/cases/$(caseId)).data.clinicId == getUserOrgId()
+                    && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'CLINIC_ADMIN';
+    }
+
+    // User Profile Avatar Upload bucket segment
+    match /users/{userId}/avatar.png {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() 
+                    && request.auth.uid == userId 
+                    && request.resource.contentType.matches('image/png')
+                    && isValidSize(5 * 1024 * 1024); // Maximum avatar thumbnail cap of 5MB
+    }
+  }
+}

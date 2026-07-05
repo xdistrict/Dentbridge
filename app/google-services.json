@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "643583380524",
+    "project_id": "com-aistudio-dentbridge-kxpqz",
+    "storage_bucket": "com-aistudio-dentbridge-kxpqz.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:643583380524:android:54396eb8778edcb3fa5589",
+        "android_client_info": {
+          "package_name": "com.aistudio.dentbridge.kxpqz"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAPs5ehSBPruhqTjsJnQ3YUYAQ0z9hHvAQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

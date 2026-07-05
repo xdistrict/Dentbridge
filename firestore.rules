@@ -1,0 +1,119 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSystemAdmin() {
+      return isAuthenticated() && getUserData().role == 'SYSTEM_ADMIN';
+    }
+
+    function hasClinicAccess(clinicId) {
+      return isAuthenticated() && (
+        getUserData().clinicId == clinicId || 
+        getUserData().role == 'SYSTEM_ADMIN'
+      );
+    }
+
+    function hasLabAccess(labId) {
+      return isAuthenticated() && (
+        getUserData().labId == labId || 
+        getUserData().role == 'SYSTEM_ADMIN'
+      );
+    }
+
+    // --- 1. Users Collection ---
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isSystemAdmin() || (isAuthenticated() && request.auth.uid == userId);
+    }
+
+    // --- 2. Clinics Collection ---
+    match /clinics/{clinicId} {
+      allow read: if isAuthenticated() && (getUserData().clinicId == clinicId || isSystemAdmin());
+      allow write: if isSystemAdmin() || (isAuthenticated() && getUserData().clinicId == clinicId && getUserData().role == 'CLINIC_ADMIN');
+    }
+
+    // --- 3. Labs Collection ---
+    match /labs/{labId} {
+      allow read: if isAuthenticated();
+      allow write: if isSystemAdmin() || (isAuthenticated() && getUserData().labId == labId && getUserData().role == 'LAB_ADMIN');
+    }
+
+    // --- 4. Cases Collection ---
+    match /cases/{caseId} {
+      allow read: if isAuthenticated() && (
+        getUserData().clinicId == resource.data.clinicId || 
+        getUserData().labId == resource.data.labId || 
+        isSystemAdmin()
+      );
+      allow create: if isAuthenticated() && (
+        getUserData().clinicId == request.resource.data.clinicId || 
+        isSystemAdmin()
+      );
+      allow update, delete: if isAuthenticated() && (
+        getUserData().clinicId == resource.data.clinicId || 
+        getUserData().labId == resource.data.labId || 
+        isSystemAdmin()
+      );
+    }
+
+    // --- 5. Patients Collection ---
+    match /patients/{patientId} {
+      allow read: if isAuthenticated() && (
+        getUserData().clinicId == resource.data.clinicId || 
+        isSystemAdmin()
+      );
+      allow write: if isAuthenticated() && (
+        getUserData().clinicId == request.resource.data.clinicId || 
+        isSystemAdmin()
+      );
+    }
+
+    // --- 6. Messages Collection ---
+    match /messages/{messageId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && (
+        resource.data.senderUid == request.auth.uid || 
+        isSystemAdmin()
+      );
+    }
+
+    // --- 7. Notifications Collection ---
+    match /notifications/{notificationId} {
+      allow read, update: if isAuthenticated() && (
+        resource.data.recipientUid == request.auth.uid || 
+        isSystemAdmin()
+      );
+      allow create: if isAuthenticated();
+      allow delete: if isAuthenticated() && (
+        resource.data.recipientUid == request.auth.uid || 
+        isSystemAdmin()
+      );
+    }
+
+    // --- 8. Payments Collection ---
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated() && (
+        getUserData().clinicId == resource.data.payerClinicId || 
+        getUserData().labId == resource.data.payeeLabId || 
+        isSystemAdmin()
+      );
+      allow write: if isSystemAdmin();
+    }
+
+    // --- 9. Activity Logs Collection ---
+    match /activityLogs/{logId} {
+      allow read: if isSystemAdmin();
+      allow create: if isAuthenticated();
+    }
+  }
+}
